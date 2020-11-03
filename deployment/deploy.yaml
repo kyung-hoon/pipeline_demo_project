@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: hello1
-          image: happycloudpak/hello1
+          image: kyunghoon451/tekton_pipeline_resource
           imagePullPolicy: Always
           env:
             - name: PORT
