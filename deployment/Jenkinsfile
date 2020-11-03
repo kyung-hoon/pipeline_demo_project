@@ -1,0 +1,96 @@
+def label = "devops-${UUID.randomUUID().toString()}"
+
+def notifySlack(STATUS, COLOR) {
+	slackSend (color: COLOR, message: STATUS+" : " +  "${env.JOB_NAME} [${env.BUILD_NUMBER}] (${env.BUILD_URL})")
+}
+
+def notifyMail(STATUS, RECIPIENTS) {
+	emailext body: STATUS+" : " +  "${env.JOB_NAME} [${env.BUILD_NUMBER}] (${env.BUILD_URL})",
+	subject: STATUS + " : " + "${env.JOB_NAME} [${env.BUILD_NUMBER}]",
+	to: RECIPIENTS
+}
+def email_recipients="hapycloudpak@gmail.com"
+
+notifySlack("STARTED", "#FFFF00")
+notifyMail("STARTED", "${email_recipients}")
+
+podTemplate(
+	label: label, 
+	containers: [
+		//container image는 docker search 명령 이용
+		containerTemplate(name: "docker", image: "docker:stable", ttyEnabled: true, command: "cat"),
+		containerTemplate(name: "kubectl", image: "lachlanevenson/k8s-kubectl", command: "cat", ttyEnabled: true),
+		containerTemplate(name: "scanner", image: "newtmitch/sonar-scanner", ttyEnabled: true, command: "cat")
+	],
+	//volume mount
+	volumes: [
+		hostPathVolume(hostPath: "/var/run/docker.sock", mountPath: "/var/run/docker.sock")
+	]
+) 
+{
+	node(label) {
+		stage("Get Source") {
+			git "https://gitlab.com/happycloudpak/hello1.git"
+		}
+
+		//-- 환경변수 파일 읽어서 변수값 셋팅
+		def props = readProperties  file:"deployment/pipeline.properties"
+		def tag = props["version"]
+		def dockerRegistry = props["dockerRegistry"]
+		def credential_registry=props["credential_registry"]
+		def image = props["image"]
+		def deployment = props["deployment"]
+		def selector_key = props["selector_key"]
+		def selector_val = props["selector_val"]
+		def namespace = props["namespace"]
+
+		try {
+			stage("Inspection Code") {
+				container("scanner") {
+					sh "sonar-scanner \
+						-Dsonar.projectName=happycloud \
+						-Dsonar.projectKey=happycloud \
+  						-Dsonar.sources=. \
+  						-Dsonar.host.url=http://169.56.164.250:31412 \
+  						-Dsonar.login=60ead689f65814fa14dd9360b33d0f382580d5af"      
+				}
+			}
+					
+			stage("Build Microservice image") {
+				container("docker") {
+					docker.withRegistry("${dockerRegistry}", "${credential_registry}") {
+						sh "docker build -f ./deployment/Dockerfile -t ${image}:${tag} ."
+						sh "docker push ${image}:${tag}"
+						sh "docker tag ${image}:${tag} ${image}:latest"
+						sh "docker push ${image}:latest"
+					}
+				}
+			}
+			
+			stage("Image Vulnerability Scanning") {
+				container("docker"){
+					aquaMicroscanner imageName: "${image}:latest", notCompliesCmd: "", onDisallowed: "ignore", outputFormat: "html"
+				}
+			}
+						
+			stage( "Clean Up Existing Deployments" ) {
+				container("kubectl") {
+					sh "kubectl delete deployments -n ${namespace} --selector=${selector_key}=${selector_val}"
+				}
+			}
+			
+			
+			stage( "Deploy to Cluster" ) {
+				container("kubectl") {
+					sh "kubectl apply -n ${namespace} -f ${deployment}"
+				}
+			}
+			notifySlack("${currentBuild.currentResult}", "#00FF00")
+			notifyMail("${currentBuild.currentResult}", "${email_recipients}")
+		} catch(e) {
+			currentBuild.result = "FAILED"
+			notifySlack("${currentBuild.currentResult}", "#00FF00")
+			notifyMail("${currentBuild.currentResult}", "${email_recipients}")
+		}
+	}
+}

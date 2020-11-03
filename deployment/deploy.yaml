@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello1
+  labels:
+    appname: hello1
+spec:
+  selector:
+    matchLabels:
+      appname: hello1
+  replicas: 2
+  template:
+    metadata:
+      name: hello1
+      labels:
+        appname: hello1
+    spec:
+      containers:
+        - name: hello1
+          image: happycloudpak/hello1
+          imagePullPolicy: Always
+          env:
+            - name: PORT
+              value: "8081"
+          ports:
+            - name: port1
+              containerPort: 8081
+          resources:
+            requests:
+              cpu: 50m
+              memory: 102Mi
+            limits:
+              cpu: 100m
+              memory: 204Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-hello1
+spec:
+  type: NodePort
+  selector:
+    appname: hello1
+  ports:
+    - name: port-hello1
+      port: 8090
+      targetPort: 8081
+---
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: ing-hello1
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /(.*)
+            backend:
+              serviceName: svc-hello1
+              servicePort: 8090
