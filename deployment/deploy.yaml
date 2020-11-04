@@ -45,19 +45,4 @@ spec:
     - name: port-hello1
       port: 8090
       targetPort: 8081
----
-apiVersion: networking.k8s.io/v1beta1
-kind: Ingress
-metadata:
-  name: ing-hello1
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /$1
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-spec:
-  rules:
-    - http:
-        paths:
-          - path: /(.*)
-            backend:
-              serviceName: svc-hello1
-              servicePort: 8090
+
