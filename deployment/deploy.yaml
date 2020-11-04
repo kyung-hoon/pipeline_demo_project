@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: hello1
-          image: kyunghoon451/tekton_pipeline_resource
+          image: kyunghoon451/tekton_pipeline_resource:0.0.1
           imagePullPolicy: Always
           env:
             - name: PORT
